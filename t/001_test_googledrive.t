@@ -52,7 +52,7 @@ isa_ok($drive, 'Net::Google::Drive');
 my $internet_connection = testInternetConnection();
 
 ####### TESTS ######
-SKIP {
+SKIP: {
     if (not $internet_connection) {
         skip "Skip tests: No internet connection";  
     }
