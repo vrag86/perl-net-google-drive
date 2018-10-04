@@ -94,7 +94,9 @@ sub downloadFile {
                                                 }, 
                                                 $DOWNLOAD_BUFF_SIZE
                                             );
-    close $FL if $FL;
+    if ($FL) {
+        close $FL;
+    }
     my $response_code = $response->code();
     if ($response_code != 200) {
         my $error_message = __readErrorMessageFromResponse($response);
@@ -131,7 +133,9 @@ sub uploadFile {
     my ($self, %opt)                    = @_;
     my $source_file                     = $opt{-source_file}        || croak "You must specify '-source_file' param";
 
-    croak "File: $source_file not exists" if not -f $source_file;
+    if (not -f $source_file) {
+        croak "File: $source_file not exists";
+    }
 
     my $file_size = (stat $source_file)[7];
     my $part_upload_uri = $self->__createEmptyFile($source_file, $file_size);
@@ -172,7 +176,7 @@ sub uploadFile {
 sub setFilePermission {
     my ($self, %opt)            = @_;
     my $file_id                 = $opt{-file_id}        || croak "You must specify '-file_id' param";
-    my $permission              = $opt{-permission}     || croak "You must specify '-permission' param";
+    my $permission_type         = $opt{-type}           || croak "You must specify '-type' param";
     my $role                    = $opt{-role}           || croak "You must specify '-role' param";
     my %valid_permissions       = (
         'user'              => 1,
@@ -190,11 +194,11 @@ sub setFilePermission {
         'reader'            => 1,
     );
     #Check permission in param
-    if (not $valid_permissions{$permission}) {
-        croak "Wrong permission: '$permission'. Valid permissions: " . join(' ', keys %valid_permissions);
+    if (not $valid_permissions{$permission_type}) {
+        croak "Wrong permission type: '$permission_type'. Valid permissions types: " . join(' ', keys %valid_permissions);
     }
 
-    #Check role in parami
+    #Check role in param
     if (not $valid_roles{$role}) {
         croak "Wrong role: '$role'. Valid roles: " . join(' ', keys %valid_roles);
     }
@@ -206,7 +210,7 @@ sub setFilePermission {
         'Content-Type'  => 'application/json',
     ];
     my $request_content = {
-        'type'  => $permission,
+        'type'  => $permission_type,
         'role'  => $role,
     };
 
@@ -240,6 +244,24 @@ sub getFileMetadata {
         croak "Can't get metadata from file id: $file_id. Code: $response_code. Error message: $error_message";
     }
     return decode_json($response->content());
+}
+
+sub shareFile {
+    my ($self, %opt)            = @_;
+    my $file_id                 = $opt{-file_id}        || croak "You must specify '-file_id' param";
+
+    ## Adding permissions to file
+    my $permission = $self->setFilePermission(
+                                -file_id        => $file_id,
+                                -type           => 'anyone',
+                                -role           => 'reader',
+                            );
+    if ((not exists $permission->{type}) || ($permission->{type} ne 'anyone')) {
+        croak "Can't set permission to anyone for file id: $file_id";
+    }
+
+    my $metadata = $self->getFileMetadata( -file_id => $file_id );
+    return $metadata->{webContentLink};
 }
 
 sub __createEmptyFile {
@@ -312,7 +334,9 @@ sub __apiRequest {
 
     my $response = $self->{ua}->request($request);
     my $response_code = $response->code;
-    croak "Wrong response code on search_file. Code: $response_code" if $response_code != 200;
+    if ($response_code != 200) {
+        croak "Wrong response code on search_file. Code: $response_code";
+    }
 
     my $json_res = decode_json($response->content);
 
@@ -420,8 +444,163 @@ Search file on google disk by name. Return arrayref to info with found files. If
 Search files on google drive by name contains value in param '-filename'
 Param and return value same as in method L<searchFileByName>
 
+=head2 downloadFile(%opt) 
 
+Download file from google dist to -dest_file on local system. Return 1 if success, die in otherwise
 
+    %opt: 
+        -dest_file          => Name of file on disk in which you will download file from google disk
+        -file_id            => Id of file on google disk
+
+=head2 deleteFile(%opt)
+
+Delete file from google disk. Return 1 if success, die in otherwise
+
+    %opt: 
+        -file_id            => Id of file on google disk
+
+=head2 uploadFile(%opt)
+
+Upload file from local system to google drive. Return file_info hashref if success, die in otherwise
+    
+    %opt:
+        -source_file        => File on local system
+    Return:
+       {
+            id         "1LVAr2PpqX9m314JyZ6YJ4v_KIzG0Gey2",
+            kind       "drive#file",
+            mimeType   "application/octet-stream",
+            name       "gogle_upload_file"
+       }
+
+=head2 setFilePermission(%opt)
+
+Set permissions for file on google drive. Return permission hashref, die in otherwise
+
+    %opt:
+        -file_id            => Id of file on google disk
+        -type               => The type of the grantee. Valid values are: (user, group, domain, anyone)
+        -role               => The role granted by this permission. Valid values are: (owner, organizer, fileOrganizer, writer, commenter, reader)
+    Return:
+        {
+            allowFileDiscovery   JSON::PP::Boolean  {
+                Parents       Types::Serialiser::BooleanBase
+                public methods (0)
+                private methods (0)
+                internals: 0
+            },
+            id                   "anyoneWithLink",
+            kind                 "drive#permission",
+            role                 "reader",
+            type                 "anyone"
+        }
+
+=head2 getFileMetadata(%opt)
+
+Get metadata of file. Return hashref with metadata if success, die in otherwise
+
+    %opt: 
+        -file_id            => Id of file on google disk
+    Return:
+            {                                                                                                                                                         alternateLink                  "https://drive.google.com/file/d/10Z5YDCHn3gnj0S4_Lf0poc2Lm5so0Sut/view?usp=drivesdk",
+            appDataContents                JSON::PP::Boolean  {
+                Parents       Types::Serialiser::BooleanBase
+                public methods (0)
+                private methods (0)
+                internals: 0
+            },
+            capabilities                   {
+                canCopy   JSON::PP::Boolean  {
+                    Parents       Types::Serialiser::BooleanBase
+                    public methods (0)
+                    private methods (0)
+                    internals: 1
+                },
+                canEdit   var{capabilities}{canCopy}
+            },
+            copyable                       var{capabilities}{canCopy},
+            copyRequiresWriterPermission   var{appDataContents},
+            createdDate                    "2018-10-04T12:05:15.896Z",
+            downloadUrl                    "https://doc-0g-7o-docs.googleusercontent.com/docs/securesc/ck8i7vfbvef13kb30b8mkrcjv4ihp2uj/3mfn1kbr655euhlo7tctg5mmn8oirg
+        gf/1538654400000/10526805100525201667/10526805100525201667/10Z5YDCHn3gnj0S4_Lf0poc2Lm5so0Sut?e=download&gd=true",
+            editable                       var{capabilities}{canCopy},
+            embedLink                      "https://drive.google.com/file/d/10Z5YDCHn3gnj0S4_Lf0poc2Lm5so0Sut/preview?usp=drivesdk",
+            etag                           ""omwGuTP8OdxhZkubyp-j43cFdJQ/MTUzODY1NDcxNTg5Ng"",
+            explicitlyTrashed              var{appDataContents},
+            fileExtension                  "",
+            fileSize                       1000000,
+            headRevisionId                 "0B4HgPHxdPy22UmZXSFVRTkRLbXhFakdzZjFSUGkrNWZIVFN3PQ",
+            iconLink                       "https://drive-thirdparty.googleusercontent.com/16/type/application/octet-stream",
+            id                             "10Z5YDCHn3gnj0S4_Lf0poc2Lm5so0Sut",
+            kind                           "drive#file",
+            labels                         {
+                hidden       var{appDataContents},
+                restricted   var{appDataContents},
+                starred      var{appDataContents},
+                trashed      var{appDataContents},
+                viewed       var{appDataContents}
+            },
+            lastModifyingUser              {
+                    displayName           "Ларри Уолл",
+                    emailAddress          "perlgogledrivemodule@gmail.com",
+                    isAuthenticatedUser   var{capabilities}{canCopy},
+                    kind                  "drive#user",
+                    permissionId          10526805100525201667
+            },
+            lastModifyingUserName          "Ларри Уолл",
+            markedViewedByMeDate           "1970-01-01T00:00:00.000Z",
+            md5Checksum                    "ded2a2983b3e1743152d8224549510e1",
+            mimeType                       "application/octet-stream",
+            modifiedByMeDate               "2018-10-04T12:05:15.896Z",
+            modifiedDate                   "2018-10-04T12:05:15.896Z",
+            originalFilename               "gogle_upload_file",
+            ownerNames                     [
+                [0] "Ларри Уолл"
+            ],
+            owners                         [
+                [0] {
+                    displayName           "Ларри Уолл",
+                    emailAddress          "perlgogledrivemodule@gmail.com",
+                    isAuthenticatedUser   var{capabilities}{canCopy},
+                    kind                  "drive#user",
+                    permissionId          10526805100525201667
+                }
+            ],
+            parents                        [
+                [0] {
+                    id           "0AIHgPHxdPy22Uk9PVA",
+                    isRoot       var{capabilities}{canCopy},
+                    kind         "drive#parentReference",
+                    parentLink   "https://www.googleapis.com/drive/v2/files/0AIHgPHxdPy22Uk9PVA",
+                    selfLink     "https://www.googleapis.com/drive/v2/files/10Z5YDCHn3gnj0S4_Lf0poc2Lm5so0Sut/parents/0AIHgPHxdPy22Uk9PVA"
+                }
+            ],
+            quotaBytesUsed                 1000000,
+            selfLink                       "https://www.googleapis.com/drive/v2/files/10Z5YDCHn3gnj0S4_Lf0poc2Lm5so0Sut",
+            shared                         var{appDataContents},
+            spaces                         [
+                [0] "drive"
+            ],
+            title                          "gogle_upload_file",
+            userPermission                 {
+                etag       ""omwGuTP8OdxhZkubyp-j43cFdJQ/N52l-iUAo-dARaTch8nQXOzl348"",
+                id         "me",
+                kind       "drive#permission",
+                role       "owner",
+                selfLink   "https://www.googleapis.com/drive/v2/files/10Z5YDCHn3gnj0S4_Lf0poc2Lm5so0Sut/permissions/me",
+                type       "user"
+            },
+            version                        2,
+            webContentLink                 "https://drive.google.com/uc?id=10Z5YDCHn3gnj0S4_Lf0poc2Lm5so0Sut&export=download",
+            writersCanShare                var{capabilities}{canCopy}
+        }
+
+=head2 shareFile(%opt)
+
+Share file for download. Return download link if success, die in otherwise
+
+    %opt: 
+        -file_id            => Id of file on google disk
 
 =head1 DEPENDENCE
 

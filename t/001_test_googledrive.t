@@ -21,8 +21,8 @@ use utf8;
 use lib 'lib';
 use File::Basename;
 use File::Spec;
-use Data::Printer;
 use Net::Google::Drive;
+use LWP::UserAgent;
 
 use Test::More 'no_plan';
 
@@ -35,8 +35,8 @@ my $CLIENT_SECRET   = $ENV{GOOGLE_CLIENT_SECRET}    // 'pK99-WlEd7kr7YcWIAVFOQpu
 my $ACCESS_TOKEN    = $ENV{GOOGLE_ACCESS_TOKEN}     // 'ya29.GlspBipu9sdZKYmO4t90eDiEUVIQ2mhIVuPWothJa2Xwihow_ka889DFPWt3GSSrSpvh3mWjKUCDn-QlRxZRxBuCuaRDFZ5Q9w2w5SHFYOn6f_F2JASA34xgbakr';
 my $REFRESH_TOKEN   = $ENV{GOOGLE_REFRESH_TOKEN}    // '1/uKe_YszQbrwA6tHI5Att-VOYuktWt5iV9Q5fy-DrEjE';
 
-my $TEST_DOWNLOAD_FILE = 't/test_download';
-my $TEST_UPLOAD_FILE = 't/gogle_upload_file';
+my $TEST_DOWNLOAD_FILE  = File::Spec->catfile('t', 'test_download');
+my $TEST_UPLOAD_FILE    = File::Spec->catfile('t', 'gogle_upload_file');
 
 
 unlink ($TEST_DOWNLOAD_FILE);
@@ -49,27 +49,40 @@ my $drive = Net::Google::Drive->new(
                                     );
 isa_ok($drive, 'Net::Google::Drive');
 
+my $internet_connection = testInternetConnection();
 
 ####### TESTS ######
-my $test_download_file_id = testSearchFileByName($drive);
-testSearchFileByNameContains($drive);
+SKIP {
+    if (not $internet_connection) {
+        skip "Skip tests: No internet connection";  
+    }
+    my $test_download_file_id = testSearchFileByName($drive);
+    testSearchFileByNameContains($drive);
 
 #### Download file
-testDownloadFile($drive, $test_download_file_id);
+    testDownloadFile($drive, $test_download_file_id);
 
 #### Upload file
-my $upload_file_id = testUploadFile($drive);
+    my $upload_file_id = testUploadFile($drive);
 #### Get metadata
-testGetFileMetadata($drive, $upload_file_id);
+    testGetFileMetadata($drive, $upload_file_id);
 #### Set permission
-testSetFilePermissionWrong($drive, $upload_file_id);
-testSetFilePermission($drive, $upload_file_id, 'anyone');
+    testSetFilePermissionWrong($drive, $upload_file_id);
+    testSetFilePermission($drive, $upload_file_id, 'anyone');
 #### Share file
-
+    testShareFile($drive, $test_download_file_id);
 
 #### Delete file
-testDeleteFile($drive, $upload_file_id);
+    testDeleteFile($drive, $upload_file_id);
+}
 
+unlink ($TEST_DOWNLOAD_FILE);
+
+sub testInternetConnection {
+    my $ua = LWP::UserAgent->new;
+    my $response = $ua->get('https://www.google.com');
+    return $response->code() == 200;
+}
 
 sub testSearchFileByName{
     my ($drive) = @_;
@@ -134,18 +147,27 @@ sub testSetFilePermissionWrong {
     eval {
         $drive->setFilePermission(
                                                     -file_id        => $file_id,
-                                                    -permission     => 'test'
+                                                    -type           => 'test',
+                                                    -role           => 13,
                                                 );
     };
     like ($@, qr/^Wrong permission/, 'Test wrong permission');
 }
 
-sub testFileSetPermission {
-    my ($drive, $file_id, $permission) = @_;
+sub testSetFilePermission {
+    my ($drive, $file_id, $type) = @_;
     my $perm = $drive->setFilePermission(
                                                 -file_id        => $file_id,
-                                                -permission     => $permission,
+                                                -type           => $type,
                                                 -role           => 'reader',          
                                             );
-    is($perm->{permission}, $permission, 'Test setFilePermission()');
+    is($perm->{type}, $type, 'Test setFilePermission()');
+}
+
+sub testShareFile {
+    my ($drive, $file_id) = @_;
+
+    my $file_link = $drive->shareFile( -file_id => $file_id );
+
+    like($file_link, qr/^http/, "Test share file link. Link: $file_link");
 }
