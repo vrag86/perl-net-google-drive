@@ -59,6 +59,13 @@ testDownloadFile($drive, $test_download_file_id);
 
 #### Upload file
 my $upload_file_id = testUploadFile($drive);
+#### Get metadata
+testGetFileMetadata($drive, $upload_file_id);
+#### Set permission
+testSetFilePermissionWrong($drive, $upload_file_id);
+testSetFilePermission($drive, $upload_file_id, 'anyone');
+#### Share file
+
 
 #### Delete file
 testDeleteFile($drive, $upload_file_id);
@@ -111,4 +118,34 @@ sub testUploadFile {
     my $file_id = $res->{id};
     ok($file_id, "Uploaded file id: $file_id");
     return $file_id;
+}
+
+sub testGetFileMetadata {
+    my ($drive, $file_id) = @_;
+
+    my $metadata = $drive->getFileMetadata(
+                                            -file_id        => $file_id,
+                                        );
+    ok($metadata, 'Get file metadata');
+}
+
+sub testSetFilePermissionWrong {
+    my ($drive, $file_id) = @_;
+    eval {
+        $drive->setFilePermission(
+                                                    -file_id        => $file_id,
+                                                    -permission     => 'test'
+                                                );
+    };
+    like ($@, qr/^Wrong permission/, 'Test wrong permission');
+}
+
+sub testFileSetPermission {
+    my ($drive, $file_id, $permission) = @_;
+    my $perm = $drive->setFilePermission(
+                                                -file_id        => $file_id,
+                                                -permission     => $permission,
+                                                -role           => 'reader',          
+                                            );
+    is($perm->{permission}, $permission, 'Test setFilePermission()');
 }

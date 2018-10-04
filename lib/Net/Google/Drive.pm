@@ -10,7 +10,6 @@ use lib '/home/vrag/perl/googleoauth/lib';
 use LWP::UserAgent;
 use HTTP::Request;
 use JSON::XS;
-use URI::Escape;
 use URI;
 use File::Basename;
 
@@ -22,8 +21,11 @@ use Data::Printer;
 
 our $VERSION = '0.01';
 
-our $DOWNLOAD_BUFF_SIZE = 1024;
-our $UPLOAD_BUFF_SIZE = 256 * 1024;
+our $DOWNLOAD_BUFF_SIZE     = 1024;
+our $UPLOAD_BUFF_SIZE       = 256 * 1024;
+our $FILE_API_URL           = 'https://www.googleapis.com/drive/v3/files';
+our $FILE_API2_URL          = 'https://www.googleapis.com/drive/v2/files';
+our $UPLOAD_FILE_API_URL    = 'https://www.googleapis.com/upload/drive/v3/files';
 
 sub new {
     my ($class, %opt) = @_;
@@ -69,7 +71,7 @@ sub downloadFile {
     my $ua                  = $self->{ua};
     my $access_token        = $self->__getAccessToken();
 
-    my $uri = URI->new('https://www.googleapis.com/drive/v3/files/' . $file_id);
+    my $uri = URI->new(join('/', $FILE_API_URL, $file_id));
     $uri->query_form(
                         'alt'               => 'media',
                     );
@@ -106,7 +108,8 @@ sub deleteFile {
     my $file_id             = $opt{-file_id}        || croak "You must specify '-file_id' param";
     my $access_token        = $self->__getAccessToken();
 
-    my $uri = URI->new('https://www.googleapis.com/drive/v3/files/' . $file_id);
+    my $uri = URI->new(join('/', $FILE_API_URL, $file_id));
+
     my $headers = [
         'Authorization' => 'Bearer ' . $access_token,
     ];
@@ -117,7 +120,7 @@ sub deleteFile {
                             );
     my $response = $self->{ua}->request($request);
     my $response_code = $response->code();
-    if ($response_code != 200) {
+    if ($response_code =~ /^[^2]/) {
         my $error_message = __readErrorMessageFromResponse($response);
         croak "Can't delete file id: $file_id. Code: $response_code. Message: $error_message";
     }
@@ -166,6 +169,79 @@ sub uploadFile {
     return;
 }
 
+sub setFilePermission {
+    my ($self, %opt)            = @_;
+    my $file_id                 = $opt{-file_id}        || croak "You must specify '-file_id' param";
+    my $permission              = $opt{-permission}     || croak "You must specify '-permission' param";
+    my $role                    = $opt{-role}           || croak "You must specify '-role' param";
+    my %valid_permissions       = (
+        'user'              => 1,
+        'group'             => 1,
+        'domain'            => 1,
+        'anyone'            => 1,
+    );
+
+    my %valid_roles = (
+        'owner'             => 1,
+        'organizer'         => 1,
+        'fileOrganizer'     => 1,
+        'writer'            => 1,
+        'commenter'         => 1,
+        'reader'            => 1,
+    );
+    #Check permission in param
+    if (not $valid_permissions{$permission}) {
+        croak "Wrong permission: '$permission'. Valid permissions: " . join(' ', keys %valid_permissions);
+    }
+
+    #Check role in parami
+    if (not $valid_roles{$role}) {
+        croak "Wrong role: '$role'. Valid roles: " . join(' ', keys %valid_roles);
+    }
+    my $access_token            = $self->__getAccessToken();
+
+    my $uri = URI->new(join('/', $FILE_API_URL, $file_id, 'permissions'));
+    my $headers = [
+        'Authorization' => 'Bearer ' . $access_token,
+        'Content-Type'  => 'application/json',
+    ];
+    my $request_content = {
+        'type'  => $permission,
+        'role'  => $role,
+    };
+
+    my $request = HTTP::Request->new('POST', $uri, $headers, encode_json($request_content));
+
+    my $response = $self->{ua}->request($request);
+    my $response_code = $response->code();
+    if ($response_code != 200) {
+        my $error_message = __readErrorMessageFromResponse($response);
+        croak "Can't share file id: $file_id. Code: $response_code. Error message: $error_message";
+    }
+    return decode_json($response->content());
+}
+
+sub getFileMetadata {
+    my ($self, %opt)            = @_;
+    my $file_id                 = $opt{-file_id}        || croak "You must specify '-file_id' param";
+    my $access_token            = $self->__getAccessToken();
+
+    my $uri = URI->new(join('/', $FILE_API2_URL, $file_id));
+    $uri->query_form('supportsTeamDrives' => 'true');
+
+    my $headers = [
+        'Authorization' => 'Bearer ' . $access_token,
+    ];
+    my $request = HTTP::Request->new("GET", $uri, $headers);
+    my $response = $self->{ua}->request($request);
+    my $response_code = $response->code();
+    if ($response_code != 200) {
+        my $error_message = __readErrorMessageFromResponse($response);
+        croak "Can't get metadata from file id: $file_id. Code: $response_code. Error message: $error_message";
+    }
+    return decode_json($response->content());
+}
+
 sub __createEmptyFile {
     my ($self, $source_file, $file_size)        = @_;
     my $access_token                            = $self->__getAccessToken();
@@ -175,7 +251,8 @@ sub __createEmptyFile {
     };
     my $body_json = encode_json($body);
 
-    my $uri = URI->new('https://www.googleapis.com/upload/drive/v3/files?upload_type=resumable');
+    my $uri = URI->new($UPLOAD_FILE_API_URL);
+    $uri->query_form('upload_type'  => 'resumable');
     my $headers = [
         'Authorization'             => 'Bearer ' . $access_token,
         'Content-Length'            => length($body_json),
@@ -192,7 +269,7 @@ sub __createEmptyFile {
         croak "Can't upload part of file. Code: $response_code. Error message: $error_message";
     }
 
-    my $location = $response->header('Location') or croak "Locatio header not defined";
+    my $location = $response->header('Location') or croak "Location header not defined";
 
     return $location;
 }
@@ -211,16 +288,16 @@ sub __readErrorMessageFromResponse {
 sub __searchFile {
     my ($self, $q) = @_;
 
-    $q = uri_escape_utf8($q);
-
     my $access_token = $self->__getAccessToken();
     
     my $headers = [
         'Authorization' => 'Bearer ' . $access_token,
     ];
 
+    my $uri = URI->new($FILE_API_URL);
+    $uri->query_form('q'    => $q);
     my $request = HTTP::Request->new('GET',
-                                'https://www.googleapis.com/drive/v3/files?q=' . $q,
+                                $uri,
                                 $headers,
                             );
     my $files = [];
@@ -272,6 +349,99 @@ sub __getAccessToken {
     return $self->{access_token};
 }
 
-
-
 1;
+
+=head1 NAME
+
+B<Net::Google::Drive> - simple Google drive API module
+
+=head1 SYNOPSIS
+
+This module use to upload, download, share file on Google drive
+    use Net::Google::Drive;
+
+    #Create disk object. You need send in param 'access_token', 'refresh_token', 'client_id' and 'client_secret'. 
+    #Values of 'client_id' and 'client_secret' uses to create Net::Google::OAuth object so that update value of 'access_token'.
+    my $disk = Net::Google::Drive->new(
+                                        -client_id          => $client_id,
+                                        -client_secret      => $client_secret,
+                                        -access_token       => $access_token,
+                                        -refresh_token      => $refresh_token,
+                                        );
+
+    # Search file by name
+    my $file_name = 'upload.doc';
+    my $files = $drive->searchFileByName( -filename => $file_name ) or croak "File '$file_name' not found";
+    my $file_id = $files->[0]->{id};
+    print "File id: $file_id\n";
+
+    #Download file
+    my $dest_file = '/home/upload.doc';
+    $disk->downloadFile(
+                            -file_id        => $file_id,
+                            -dest_file      => $dest_file,
+                            );
+
+    #Upload file
+    my $source_file = '/home/upload.doc';
+    my $res = $disk->uploadFile( -source_file   => $source_file );
+    print "File: $source_file uploaded. File id: $res->{id}\n";
+
+=head1 METHODS
+
+=head2 new(%opt)
+
+Create L<Net::Google::Disk> object
+
+    %opt:
+        -client_id          => Your app client id (Get from google when register your app)
+        -client_secret      => Your app client secret (Get from google when register your app)
+        -access_token       => Access token value (Get from L<Net::Google::OAuth>)
+        -refresh_token      => Refresh token value (Get from L<Net::Google::OAuth>)
+
+=head2 searchFileByName(%opt)
+
+Search file on google disk by name. Return arrayref to info with found files. If files not found - return empty arrayref
+
+    %opt:
+        -filename           => Name of file to find
+    Return:
+   [
+        [0] {
+            id         "1f13sLfo6UEyUuFpn-NWPnY",
+            kind       "drive#file",
+            mimeType   "application/x-perl",
+            name       "drive.t"
+        }
+    ]
+    
+=head2 searchFileByNameContains(%opt)
+
+Search files on google drive by name contains value in param '-filename'
+Param and return value same as in method L<searchFileByName>
+
+
+
+
+=head1 DEPENDENCE
+
+L<Net::Google::OAuth>, L<LWP::UserAgent>, L<JSON::XS>, L<URI>, L<HTTP::Request>, L<File::Basename> 
+
+=head1 AUTHORS
+
+=over 4
+
+=item *
+
+Pavel Andryushin <vrag867@gmail.com>
+
+=back
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2018 by Pavel Andryushin.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
+=cut
