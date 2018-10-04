@@ -375,6 +375,8 @@ sub __getAccessToken {
 
 1;
 
+=encoding utf8
+
 =head1 NAME
 
 B<Net::Google::Drive> - simple Google drive API module
