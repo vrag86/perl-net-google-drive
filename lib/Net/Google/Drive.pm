@@ -17,8 +17,6 @@ use Carp qw/carp croak/;
 
 use Net::Google::OAuth;
 
-use Data::Printer;
-
 our $VERSION = '0.01';
 
 our $DOWNLOAD_BUFF_SIZE     = 1024;
