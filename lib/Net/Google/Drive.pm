@@ -5,8 +5,6 @@ use strict;
 use warnings;
 use utf8;
 
-use lib '/home/vrag/perl/googleoauth/lib';
-
 use LWP::UserAgent;
 use HTTP::Request;
 use JSON::XS;
