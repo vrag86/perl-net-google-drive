@@ -16,7 +16,7 @@ SYNOPSIS
 
         # Search file by name
         my $file_name = 'upload.doc';
-        my $files = $drive->searchFileByName( -filename => $file_name ) or croak "File '$file_name' not found";
+        my $files = $disk->searchFileByName( -filename => $file_name ) or croak "File '$file_name' not found";
         my $file_id = $files->[0]->{id};
         print "File id: $file_id\n";
 
@@ -82,6 +82,7 @@ METHODS
 
         %opt:
             -source_file        => File on local system
+            -parents            => Optional arrayref of parent ids
         Return:
            {
                 id         "1LVAr2PpqX9m314JyZ6YJ4v_KIzG0Gey2",
