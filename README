@@ -2,11 +2,13 @@ NAME
     Net::Google::Drive - simple Google drive API module
 
 SYNOPSIS
-    This module use to upload, download, share file on Google drive use
-    Net::Google::Drive;
+    A module for uploading, downloading, sharing files on Google drive
 
-        #Create disk object. You need send in param 'access_token', 'refresh_token', 'client_id' and 'client_secret'. 
-        #Values of 'client_id' and 'client_secret' uses to create Net::Google::OAuth object so that update value of 'access_token'.
+        use Net::Google::Drive;
+
+        #Create disk object. Required parameters are 'refresh_token', 'client_id' and 'client_secret'
+        #and 'access_token' if you have an unexpired one. Otherwise the access_token will be
+        #updated using the refresh_token by using a Net::Google::OAuth object with 'client_id' and 'client_secret'.
         my $disk = Net::Google::Drive->new(
                                             -client_id          => $client_id,
                                             -client_secret      => $client_secret,
@@ -39,7 +41,7 @@ METHODS
         %opt:
             -client_id          => Your app client id (Get from google when register your app)
             -client_secret      => Your app client secret (Get from google when register your app)
-            -access_token       => Access token value (Get from L<Net::Google::OAuth>)
+            -access_token       => Access token value (Optional. Get from L<Net::Google::OAuth>)
             -refresh_token      => Refresh token value (Get from L<Net::Google::OAuth>)
 
   searchFileByName(%opt)
