@@ -29,7 +29,7 @@ sub new {
     my $self                    = {};
     my $client_id               = $opt{-client_id}          // croak "You must specify '-client_id' param";
     my $client_secret           = $opt{-client_secret}      // croak "You must specify '-client_secret' param";
-    $self->{access_token}       = $opt{-access_token}       // croak "You must specify '-access_token' param";
+    $self->{access_token}       = $opt{-access_token}       // 0;
     $self->{refresh_token}      = $opt{-refresh_token}      // croak "You must specify '-refresh_token' param";
     $self->{ua}                 = LWP::UserAgent->new();
 
@@ -271,7 +271,7 @@ sub __createEmptyFile {
     my $body_json = encode_json($body);
 
     my $uri = URI->new($UPLOAD_FILE_API_URL);
-    $uri->query_form('upload_type'  => 'resumable');
+    $uri->query_form(upload_type  => 'resumable', supportsAllDrives => 'true');
     my $headers = [
         'Authorization'             => 'Bearer ' . $access_token,
         'Content-Length'            => length($body_json),
@@ -351,15 +351,16 @@ sub __getAccessToken {
     my ($self) = @_;
 
     my $oauth = $self->{oauth};
-    my $token_info = 
-        eval {
-            $oauth->getTokenInfo( -access_token => $self->{access_token} );
-        };
-    # If error on get token info or token is expired
-    if (not $@) {
-        if ((exists $token_info->{expires_in}) && ($token_info->{expires_in} > 5)) {
-            return $self->{access_token};
-        }
+
+    if ($self->{access_token}) {
+        my $token_info =
+          eval {$oauth->getTokenInfo( -access_token => $self->{access_token} )};
+
+        # If error on get token info or token is expired
+        return $self->{access_token}
+          if !$@
+          && exists( $token_info->{expires_in} )
+          && $token_info->{expires_in} > 5;
     }
 
     #Refresh token
@@ -380,11 +381,13 @@ B<Net::Google::Drive> - simple Google drive API module
 
 =head1 SYNOPSIS
 
-This module use to upload, download, share file on Google drive
+A module for uploading, downloading, sharing files on Google drive
+
     use Net::Google::Drive;
 
-    #Create disk object. You need send in param 'access_token', 'refresh_token', 'client_id' and 'client_secret'. 
-    #Values of 'client_id' and 'client_secret' uses to create Net::Google::OAuth object so that update value of 'access_token'.
+    #Create disk object. Required parameters are 'refresh_token', 'client_id' and 'client_secret'
+    #and 'access_token' if you have an unexpired one. Otherwise the access_token will be
+    #updated using the refresh_token by using a Net::Google::OAuth object with 'client_id' and 'client_secret'.
     my $disk = Net::Google::Drive->new(
                                         -client_id          => $client_id,
                                         -client_secret      => $client_secret,
@@ -419,7 +422,7 @@ Create L<Net::Google::Disk> object
     %opt:
         -client_id          => Your app client id (Get from google when register your app)
         -client_secret      => Your app client secret (Get from google when register your app)
-        -access_token       => Access token value (Get from L<Net::Google::OAuth>)
+        -access_token       => Access token value (Optional. Get from L<Net::Google::OAuth>)
         -refresh_token      => Refresh token value (Get from L<Net::Google::OAuth>)
 
 =head2 searchFileByName(%opt)
