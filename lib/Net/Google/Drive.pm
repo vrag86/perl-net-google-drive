@@ -358,7 +358,7 @@ sub __getAccessToken {
 
         # If error on get token info or token is expired
         return $self->{access_token}
-          if not $@
+          if !$@
           && exists( $token_info->{expires_in} )
           && $token_info->{expires_in} > 5;
     }
